@@ -58,7 +58,7 @@ docs/team/
    ```
    Task (general-purpose):
      "Research feasibility of [specific technical question].
-      Read the researcher skill at C:\Users\User\.claude\skills\researcher\SKILL.md
+      Read the researcher skill at /root/.claude/skills/researcher\SKILL.md
       and follow its methodology. Write findings to docs/team/research-notes.md"
    ```
 4. Write `docs/team/SPEC.md` (draft) with features described
@@ -79,7 +79,7 @@ Task (general-purpose):
   description: "Enrich spec with acceptance criteria"
   prompt: |
     You are the Product Owner for this project.
-    Read the product-owner skill at C:\Users\User\.claude\skills\product-owner\SKILL.md
+    Read the product-owner skill at /root/.claude/skills/product-owner\SKILL.md
     Follow "Mode 1: Definition" exactly.
 
     Input: Read docs/team/SPEC.md
@@ -112,7 +112,7 @@ Task (general-purpose):
   description: "Design technical architecture"
   prompt: |
     You are a senior architect designing this application.
-    Read the senior-engineer skill at C:\Users\User\.claude\skills\senior-engineer\SKILL.md
+    Read the senior-engineer skill at /root/.claude/skills/senior-engineer\SKILL.md
     Follow the Architecture & Strategy section.
 
     Input: Read docs/team/SPEC.md (the full, enriched spec)
@@ -155,7 +155,7 @@ Task (general-purpose):
   description: "Create implementation task breakdown"
   prompt: |
     You are creating an implementation plan.
-    Read the writing-plans skill at C:\Users\User\.claude\skills\writing-plans\SKILL.md
+    Read the writing-plans skill at /root/.claude/skills/writing-plans\SKILL.md
     Follow its format exactly.
 
     Input: Read both:
@@ -213,9 +213,9 @@ Task (general-purpose):
   prompt: |
     You are a senior engineer implementing a specific task.
     Read the senior-engineer skill at
-    C:\Users\User\.claude\skills\senior-engineer\SKILL.md
+    /root/.claude/skills/senior-engineer\SKILL.md
     [IF FRONTEND TASK: Also read the frontend-engineer skill at
-    C:\Users\User\.claude\skills\frontend-engineer\SKILL.md]
+    /root/.claude/skills/frontend-engineer\SKILL.md]
 
     Context:
     - Read docs/team/SPEC.md for requirements
@@ -251,7 +251,7 @@ Task (general-purpose):
   prompt: |
     You are a security reviewer examining changes from Task N.
     Read the security-review skill at
-    C:\Users\User\.claude\skills\security-review\SKILL.md
+    /root/.claude/skills/security-review\SKILL.md
 
     Your job:
     1. Run: git diff HEAD~1..HEAD to see what changed
@@ -300,7 +300,7 @@ Task (general-purpose):
   prompt: |
     You are a senior code reviewer examining changes from Task N.
     Read the code-reviewer template at
-    C:\Users\User\.claude\skills\requesting-code-review\code-reviewer.md
+    /root/.claude/skills/requesting-code-review\code-reviewer.md
 
     Context:
     - Read docs/team/TASKS.md for Task N requirements
@@ -393,7 +393,7 @@ Task (general-purpose):
   description: "Resolve ambiguity in task N"
   prompt: |
     You are the Product Owner.
-    Read C:\Users\User\.claude\skills\product-owner\SKILL.md, Mode 2.
+    Read /root/.claude/skills/product-owner\SKILL.md, Mode 2.
     Read docs/team/SPEC.md for context.
 
     Question: [specific question about behavior]
@@ -416,7 +416,7 @@ Task (general-purpose):
   description: "QA verification of built application"
   prompt: |
     You are the QA engineer verifying this application.
-    Read the qa skill at C:\Users\User\.claude\skills\qa\SKILL.md
+    Read the qa skill at /root/.claude/skills/qa\SKILL.md
     Follow its process exactly.
 
     Input:
@@ -453,7 +453,7 @@ Task (general-purpose):
   description: "Product Owner ship decision"
   prompt: |
     You are the Product Owner making the final ship decision.
-    Read C:\Users\User\.claude\skills\product-owner\SKILL.md, Mode 3.
+    Read /root/.claude/skills/product-owner\SKILL.md, Mode 3.
 
     Read:
     - docs/team/SPEC.md (what was promised)

@@ -30,9 +30,9 @@ Self-contained bundle with all skills needed for the `autonomous-team` orchestra
    Copy contents to: ~/.claude/skills/
    ```
 
-2. Update paths in `autonomous-team/SKILL.md`:
-   - Find: `C:\Users\User\.claude\skills\`
-   - Replace with your actual skills path (e.g., `C:\Users\John\.claude\skills\` or `/home/john/.claude/skills/`)
+2. Update paths in `autonomous-team/SKILL.md` (already configured for Linux):
+   - Default: `/root/.claude/skills/`
+   - Adjust to your actual skills path if needed (e.g., `/home/john/.claude/skills/`)
 
 3. Verify the skill appears in Claude Code:
    ```
