@@ -16,6 +16,7 @@ Convert an idea into a working, verified application through coordinated phases.
 3. **Artifacts live on disk** — All handoffs via files in `docs/team/`
 4. **Max 5 iterations** — If verification fails 5 times, produce BLOCKED.md and stop
 5. **Scope is locked** — Once spec is approved, new ideas go to `docs/team/FUTURE.md`
+6. **Worktree isolation** — Build work happens in a git worktree on a feature branch, merged to main only on success
 
 ---
 
@@ -76,6 +77,7 @@ docs/team/
 
 ```
 Task (general-purpose):
+  model: haiku  # Template-following task, structured output
   description: "Enrich spec with acceptance criteria"
   prompt: |
     You are the Product Owner for this project.
@@ -152,6 +154,7 @@ Task (general-purpose):
 
 ```
 Task (general-purpose):
+  model: haiku  # Template-following task, structured breakdown
   description: "Create implementation task breakdown"
   prompt: |
     You are creating an implementation plan.
@@ -180,208 +183,258 @@ Task (general-purpose):
     - Phase: Planning complete
     - Iteration: 1 of 5
     - All tasks listed as pending
+    - Total milestones: [count] (for review strategy)
 ```
 
 **Exit:** TASKS.md has actionable tasks. First task is immediately implementable.
 
 ---
 
+## Phase 4.5: Worktree Setup (Orchestrator)
+
+**Goal:** Isolate build work in a git worktree so main stays clean until success.
+
+**Why:** Phases 1-4 only produce docs — safe on main. Phase 5+ writes code, so failures could leave dirty state. A worktree on a feature branch means main is untouched until we merge on success.
+
+### Process:
+
+1. **Derive branch name** from the feature slug:
+   ```
+   feature/<slug>   (e.g. feature/agent-data-export)
+   ```
+
+2. **Create branch and worktree:**
+   ```bash
+   git branch feature/<slug>
+   git worktree add ../<project-name>-<slug> feature/<slug>
+   ```
+
+3. **Copy `docs/team/` artifacts** into the worktree (they were created on main during Phases 1-4):
+   ```bash
+   cp -r docs/team/ ../<project-name>-<slug>/docs/team/
+   ```
+
+4. **Record the worktree path** in `docs/team/PROGRESS.md`:
+   ```
+   Worktree: ../<project-name>-<slug>
+   Branch: feature/<slug>
+   ```
+
+5. **All subsequent sub-agents** (Phase 5, 6, 7) receive the worktree path and must work there.
+
+**Exit:** Worktree exists, branch created, docs copied. Ready for Phase 5.
+
+---
+
 ## Phase 5: Build Loop
 
-**Goal:** Implement all tasks from the plan, with security and code review after each task.
+**Goal:** Implement all tasks from the plan efficiently, with reviews at strategic checkpoints.
 
-**Each task follows a 4-step sub-agent cycle. All steps use fresh sub-agents to keep context manageable.**
+**Key optimizations:**
+- Batch tasks by milestone, not individual tasks
+- Review at strategic checkpoints based on project size (not every milestone)
+- Orchestrator handles trivial fixes directly
 
-### Task Cycle
+### Review Strategy (Based on Project Size)
 
-For each task in `docs/team/TASKS.md`:
+Before starting the build loop, count total milestones and apply the appropriate review strategy:
+
+| Project Size | Review Points | Rationale |
+|--------------|---------------|-----------|
+| **Small** (1-3 milestones) | After final milestone only | Low risk, review overhead not justified |
+| **Medium** (4-6 milestones) | After Milestone 1 + final | Catch foundation issues early, verify at end |
+| **Large** (7+ milestones) | Every 2-3 milestones | Regular checkpoints without excessive overhead |
+| **Security-critical milestone** | Always review | Any milestone touching auth, payments, secrets, user data |
+
+**Example for 5-milestone project:**
+```
+Milestone 1 → Review (foundation check)
+Milestone 2 → No review
+Milestone 3 → No review
+Milestone 4 → No review
+Milestone 5 → Review (final check)
+```
+
+### Milestone Cycle
+
+For each milestone in `docs/team/TASKS.md`:
 
 ```
-Step 1: Implement (sub-agent)
-Step 2: Security Review + Code Review (parallel sub-agents)
-Step 3: Fix issues (sub-agent, only if Critical/Important found)
-Step 4: Update PROGRESS.md, proceed to next task
+Step 1: Implement all tasks in milestone (single batch sub-agent)
+Step 2: Security Review + Code Review (parallel sub-agents) — IF review checkpoint
+Step 3: Fix Critical issues (orchestrator for trivial, sub-agent for complex)
+Step 4: Update PROGRESS.md, proceed to next milestone
 ```
 
-### Step 1: Implementation Sub-agent
+### Step 1: Milestone Implementation Sub-agent
 
-Dispatch a fresh sub-agent to implement the current task:
+Dispatch a **single sub-agent to implement all tasks in the milestone**:
 
 ```
 Task (general-purpose):
-  description: "Implement task N: [task title]"
+  description: "Implement Milestone N: [milestone name]"
   prompt: |
-    You are a senior engineer implementing a specific task.
+    IMPORTANT: You are working in a git worktree at [worktree-path].
+    All file operations, git commits, and test runs must happen in that directory.
+    Use absolute paths or cd to the worktree before starting work.
+
+    You are a senior engineer implementing a milestone.
     Read the senior-engineer skill at
     C:\Users\User\.claude\skills\senior-engineer\SKILL.md
-    [IF FRONTEND TASK: Also read the frontend-engineer skill at
-    C:\Users\User\.claude\skills\frontend-engineer\SKILL.md]
 
     Context:
     - Read docs/team/SPEC.md for requirements
     - Read docs/team/ARCHITECTURE.md for design decisions
-    - Read docs/team/TASKS.md for your specific task (Task N)
-    - Read docs/team/PROGRESS.md for completed work and decisions
+    - Read docs/team/TASKS.md for Milestone N tasks
+    - Read docs/team/PROGRESS.md for completed work
 
     Your job:
-    1. Implement ONLY Task N as described
-    2. Follow the architecture decisions exactly
-    3. Write tests as specified in the task
-    4. Commit your changes with a clear message referencing Task N
+    1. Implement ALL tasks in Milestone N sequentially
+    2. For each task:
+       - Create the files as specified
+       - Run tests to verify
+       - Commit with message referencing the task number
+    3. Work efficiently - implement, test, commit, move on
+    4. Update PROGRESS.md after completing the milestone
 
-    Do NOT implement other tasks. Do NOT refactor unrelated code.
-    Stick to the task scope.
+    Do NOT implement tasks from other milestones.
+    Do NOT wait for external reviews between tasks.
 ```
+
+**For large milestones (6+ tasks):** Can optionally dispatch parallel sub-agents for independent tasks within the milestone. Use a single message with multiple Task calls.
 
 **Builder skill selection:**
 - Backend/logic tasks → `senior-engineer` skill only
 - Frontend/UI tasks → `senior-engineer` + `frontend-engineer` skills (both)
 
-The `senior-engineer` skill is always used as the foundation (code quality, architecture, error handling). For frontend tasks, the `frontend-engineer` skill adds React/TypeScript patterns, design quality, and accessibility guidance on top.
+### Step 2: Milestone Review (Parallel Sub-agents)
 
-### Step 2: Security Review + Code Review (Parallel Sub-agents)
+**Only run reviews at designated checkpoints** (see Review Strategy above).
 
-After implementation commits, dispatch **both review sub-agents in parallel** (single message, multiple Task calls):
+Skip this step if:
+- This milestone is not a review checkpoint AND
+- This milestone doesn't touch security-critical code (auth, payments, secrets, user data)
+
+At review checkpoints, dispatch **both review sub-agents in parallel**:
 
 **Security Review Sub-agent:**
 
 ```
 Task (general-purpose):
-  description: "Security review task N"
+  model: haiku
+  description: "Security review Milestone N"
   prompt: |
-    You are a security reviewer examining changes from Task N.
+    IMPORTANT: You are working in a git worktree at [worktree-path].
+    All file operations, git commits, and test runs must happen in that directory.
+    Use absolute paths or cd to the worktree before starting work.
+
+    You are a security reviewer examining Milestone N changes.
     Read the security-review skill at
     C:\Users\User\.claude\skills\security-review\SKILL.md
 
     Your job:
-    1. Run: git diff HEAD~1..HEAD to see what changed
-    2. Run: git diff --stat HEAD~1..HEAD for file overview
-    3. Review ALL changes against the security checklist:
-       - Authentication & Authorization gaps
-       - Input validation (SQL injection, XSS, command injection)
-       - Secrets in code or logs
-       - Insecure dependencies
-       - SSRF / open redirect risks
-       - Unsafe deserialization
-       - Missing rate limiting on public endpoints
-    4. Check for OWASP Top 10 vulnerabilities
-    5. Scan for hardcoded secrets or credentials
+    1. Run: git log --oneline -20 to see recent commits
+    2. Run: git diff [first-commit-of-milestone]..HEAD to see all changes
+    3. Run: npm audit to check dependencies
+    4. Review against security checklist (OWASP Top 10, input validation, secrets)
+    5. Focus on CRITICAL issues only - bugs that could cause security vulnerabilities
 
-    Write findings to docs/team/SECURITY-REVIEW.md using this format:
+    Write findings to docs/team/SECURITY-REVIEW.md:
 
-    ## Task N: [task title] — Security Review
+    ## Milestone N: [name] — Security Review
     **Date:** [timestamp]
-    **Files reviewed:** [list]
+    **Commits reviewed:** [range]
 
-    ### Critical (Block — must fix before proceeding)
-    - Issue: [description]
-      - Location: [file:line]
-      - Risk: [what could go wrong]
-      - Fix: [how to resolve]
-
-    ### Important (Fix before next task)
-    - Issue: ...
+    ### Critical (Must fix before next milestone)
+    - [Only security vulnerabilities that could be exploited]
 
     ### Notes
-    - [Observations, recommendations]
+    - [Observations]
 
     ### Verdict: PASS | FAIL
-    (FAIL if any Critical issues exist)
 
-    APPEND to the file (don't overwrite previous reviews).
-    If no issues found, write "### Verdict: PASS" with a brief note.
+    APPEND to the file. Be concise - milestone reviews should be brief.
 ```
 
 **Code Review Sub-agent:**
 
 ```
 Task (general-purpose):
-  description: "Code review task N"
+  model: haiku
+  description: "Code review Milestone N"
   prompt: |
-    You are a senior code reviewer examining changes from Task N.
-    Read the code-reviewer template at
-    C:\Users\User\.claude\skills\requesting-code-review\code-reviewer.md
+    IMPORTANT: You are working in a git worktree at [worktree-path].
+    All file operations, git commits, and test runs must happen in that directory.
+    Use absolute paths or cd to the worktree before starting work.
 
-    Context:
-    - Read docs/team/TASKS.md for Task N requirements
-    - Read docs/team/ARCHITECTURE.md for design expectations
+    You are reviewing Milestone N implementation quality.
 
     Your job:
-    1. Run: git diff HEAD~1..HEAD to see the full diff
-    2. Run: git diff --stat HEAD~1..HEAD for file overview
-    3. Review against these criteria:
-       - Does implementation match the task spec exactly?
-       - Clean separation of concerns?
-       - Proper error handling (fail fast, clear messages)?
-       - Type safety (no Any, proper generics)?
-       - DRY principle (no duplicated logic)?
-       - Edge cases handled?
-       - Tests actually test behavior (not just mocks)?
-       - No scope creep (only implements what's asked)?
-       - Naming conventions followed?
-       - No dead code or commented-out code?
+    1. Run: git diff [first-commit-of-milestone]..HEAD
+    2. Spot-check: Does implementation match TASKS.md specs?
+    3. Focus on CRITICAL issues only - bugs, data loss, broken functionality
+    4. Skip style/minor issues - not blocking
 
-    Write findings to docs/team/CODE-REVIEW.md using this format:
+    Write findings to docs/team/CODE-REVIEW.md:
 
-    ## Task N: [task title] — Code Review
+    ## Milestone N: [name] — Code Review
     **Date:** [timestamp]
-    **Files reviewed:** [list]
 
-    ### Strengths
-    - [What's well done, be specific with file:line]
-
-    ### Critical (Must fix — bugs, data loss, broken functionality)
-    - Issue: [description]
-      - Location: [file:line]
-      - Why: [impact]
-      - Fix: [recommendation]
-
-    ### Important (Should fix — architecture, missing tests, poor patterns)
-    - Issue: ...
-
-    ### Minor (Nice to have — style, optimization)
-    - Issue: ...
+    ### Critical Issues (Must fix)
+    - [Only blocking bugs]
 
     ### Verdict: PASS | NEEDS FIXES
-    **Reasoning:** [1-2 sentence technical assessment]
 
-    APPEND to the file (don't overwrite previous reviews).
+    APPEND to the file. Be concise.
 ```
 
-### Step 3: Fix Sub-agent (Conditional)
+### Step 3: Fix Critical Issues (Conditional)
 
-**Only dispatch if either review produced Critical or Important issues.**
+**Only run if reviews found CRITICAL issues.**
 
-Read both `docs/team/SECURITY-REVIEW.md` and `docs/team/CODE-REVIEW.md` for the latest task's findings.
+**Trivial fix path (orchestrator handles directly):**
+
+If ALL critical issues meet these criteria, orchestrator applies fixes directly without dispatching a sub-agent:
+- Single file affected
+- Less than 5 lines changed per issue
+- Obvious fix (null check, typo, missing import, off-by-one)
+
+Example trivial fixes orchestrator can handle:
+- Adding `?? ''` for null coalescing
+- Adding missing `await`
+- Fixing typo in variable name
+- Adding missing import statement
+
+**Complex fix path (sub-agent):**
+
+If any issue requires multi-file changes OR complex logic, dispatch fix sub-agent:
 
 ```
 Task (general-purpose):
-  description: "Fix review issues for task N"
+  model: haiku  # Targeted fixes, minimal context needed
+  description: "Fix critical issues in Milestone N"
   prompt: |
-    You are fixing issues found during security and code review of Task N.
+    IMPORTANT: You are working in a git worktree at [worktree-path].
+    All file operations, git commits, and test runs must happen in that directory.
+    Use absolute paths or cd to the worktree before starting work.
 
-    Read the following review findings (look at the LATEST Task N section only):
-    - docs/team/SECURITY-REVIEW.md
-    - docs/team/CODE-REVIEW.md
-
-    Fix ALL Critical and Important issues listed. Ignore Minor issues.
+    Fix ONLY the Critical issues listed in:
+    - docs/team/SECURITY-REVIEW.md (latest milestone section)
+    - docs/team/CODE-REVIEW.md (latest milestone section)
 
     For each fix:
-    1. Read the file at the referenced location
-    2. Apply the recommended fix (or a better solution if the recommendation is wrong)
-    3. Ensure tests still pass after your fix
-    4. Commit with message: "fix(task-N): [brief description of fixes]"
+    1. Apply the fix
+    2. Commit with message: "fix(milestone-N): [description]"
 
-    Do NOT fix Minor issues. Do NOT refactor unrelated code.
-    Do NOT re-implement the task — only fix the specific issues listed.
+    Do NOT fix non-critical issues. Do NOT refactor.
 ```
 
-After fixes, **re-run Step 2** (both reviews again on the fix commit). If reviews pass, proceed. If still failing after 2 fix attempts, log to PROGRESS.md and continue (don't block indefinitely on a single task).
+After fixes, proceed to next milestone. Don't re-review unless security-critical.
 
 ### Step 4: Update Progress
 
-After reviews pass (or fix attempts exhausted):
-1. Update `docs/team/PROGRESS.md` — mark task complete, note any deferred Minor issues
+After milestone complete:
+1. Update `docs/team/PROGRESS.md` — mark milestone complete
 2. Proceed to next task in TASKS.md
 
 ### Ambiguity Resolution
@@ -413,8 +466,13 @@ Task (general-purpose):
 
 ```
 Task (general-purpose):
+  model: haiku  # Checklist-based verification, structured output
   description: "QA verification of built application"
   prompt: |
+    IMPORTANT: You are working in a git worktree at [worktree-path].
+    All file operations, git commits, and test runs must happen in that directory.
+    Use absolute paths or cd to the worktree before starting work.
+
     You are the QA engineer verifying this application.
     Read the qa skill at C:\Users\User\.claude\skills\qa\SKILL.md
     Follow its process exactly.
@@ -434,6 +492,11 @@ Task (general-purpose):
 
     Do NOT fix any issues you find. Report them honestly.
     Mark overall status as PASS or FAIL.
+
+    Include summary counts:
+    - Acceptance criteria: X/Y passing
+    - Critical issues: [count]
+    - Warnings: [count]
 ```
 
 **Exit:** VERIFICATION.md produced with clear PASS/FAIL status.
@@ -446,10 +509,22 @@ Task (general-purpose):
 
 ### If VERIFICATION.md shows PASS:
 
-Dispatch **Product Owner sub-agent** for final approval:
+**Fast path (orchestrator decides directly):**
+
+If VERIFICATION.md shows ALL of these conditions, orchestrator can approve without dispatching PO sub-agent:
+- All acceptance criteria: PASS (100%)
+- Critical issues: 0
+- Warnings: 0
+
+In this case, orchestrator writes "APPROVED" at the top of docs/team/VERIFICATION.md directly, then proceeds to **Merge & Cleanup** (below).
+
+**Standard path (PO sub-agent decides):**
+
+If any criteria failed, or there are warnings/issues requiring judgment, dispatch **Product Owner sub-agent**:
 
 ```
 Task (general-purpose):
+  model: haiku  # Checklist-based decision, structured output
   description: "Product Owner ship decision"
   prompt: |
     You are the Product Owner making the final ship decision.
@@ -467,6 +542,28 @@ Task (general-purpose):
     If SHIP: Write "APPROVED" at the top of docs/team/VERIFICATION.md
     If NO-SHIP: Write docs/team/GAPS.md with specific, actionable gaps
 ```
+
+### Merge & Cleanup (on APPROVED)
+
+After APPROVED is written (by either fast path or PO sub-agent), merge the feature branch back to main:
+
+```bash
+# 1. Switch to the main repo directory (NOT the worktree)
+cd <original-project-path>
+
+# 2. Merge feature branch (fast-forward preferred)
+git merge feature/<slug> --ff-only
+# If ff-only fails (main advanced during build), use:
+git merge feature/<slug> -m "Merge feature/<slug>"
+
+# 3. Remove the worktree directory
+git worktree remove ../<project-name>-<slug>
+
+# 4. Delete the feature branch
+git branch -d feature/<slug>
+```
+
+After cleanup, proceed to **Completion** reporting.
 
 ### If VERIFICATION.md shows FAIL:
 
@@ -505,7 +602,10 @@ ELSE (iteration = 5):
       - What works
       - What's stuck
       - What was tried
+      - Worktree preserved at: [worktree-path]
+      - Branch: feature/<slug>
       - Recommendation for human intervention
+    → Leave worktree intact for user inspection
     → Report to user
     → STOP
 ```
@@ -524,6 +624,7 @@ Built: [one-line summary]
 Files: [count of files created/modified]
 Tests: [X passing]
 Iterations: [N of 5 used]
+Merged feature/<slug> to main. Worktree cleaned up.
 
 Artifacts in docs/team/ for reference.
 ```
@@ -536,6 +637,7 @@ Report to user:
 
 What works: [summary]
 What's stuck: [summary]
+Worktree preserved at [worktree-path] for inspection.
 See docs/team/BLOCKED.md for details and recommendations.
 ```
 
@@ -549,12 +651,14 @@ See docs/team/BLOCKED.md for details and recommendations.
 - Only Product Owner can make scope decisions
 
 ### Quality Gates
-- No task proceeds without BOTH security review AND code review passing
-- Reviews run as parallel sub-agents after each implementation task
-- Critical issues block progress; Important issues must be fixed before next task
-- Max 2 fix attempts per task before logging and moving on
+- Reviews run at strategic checkpoints (not every milestone) — see Review Strategy
+- Security-critical milestones ALWAYS get reviewed regardless of checkpoint schedule
+- When reviews run, BOTH security review AND code review run in parallel
+- Critical issues block progress; must be fixed before next milestone
+- Trivial fixes (<5 lines, single file) can be applied by orchestrator directly
+- Max 2 fix attempts per issue before logging and moving on
 - QA must run actual tests (not just read code)
-- Product Owner has final say on ship/no-ship
+- Product Owner has final say on ship/no-ship (or orchestrator for 100% clean PASS)
 
 ### Sub-agent Discipline
 - Each sub-agent gets ONE clear job
@@ -563,6 +667,38 @@ See docs/team/BLOCKED.md for details and recommendations.
 - Never dispatch implementation sub-agents in parallel (file conflicts)
 - Security review + code review MUST run in parallel (independent, no file conflicts)
 - Fix sub-agents only read review files and fix specific issues (minimal context)
+
+### Context Efficiency
+- **First invocation**: Sub-agent reads full skill file for context
+- **Repeated invocations of same skill**: Consider passing condensed instructions inline instead of re-reading the full skill file
+- **Example**: If dispatching multiple milestone implementations, the second+ can skip "Read the senior-engineer skill" and just state the key principles inline
+- **Rationale**: Reduces context window usage, speeds up sub-agent startup
+
+### Sub-agent Model Selection
+
+You can choose which model to use for each sub-agent based on task complexity. Use the `model` parameter when dispatching Task calls:
+
+| Task Type | Recommended Model | When to Use |
+|-----------|-------------------|-------------|
+| **opus** | Complex architecture, ambiguous requirements, novel problems | Large tasks, critical decisions |
+| **sonnet** | Standard implementation, doc writing, code generation | Most tasks (default choice) |
+| **haiku** | Pattern matching, checklist-based reviews, simple fixes | Reviews, small S-sized tasks |
+
+**Guidelines:**
+- **S-sized tasks** (exceptions, simple models, config): Consider `haiku`
+- **M-sized tasks** (standard features, validators): Use `sonnet`
+- **L-sized tasks** (complex orchestration, novel design): Use `sonnet` or `opus`
+- **Reviews** (security, code): Use `haiku` - they follow checklists and scan diffs
+- **When unsure**: Default to `sonnet` - good balance of capability and efficiency
+
+**Example:**
+```
+Task (general-purpose):
+  model: haiku  # Lightweight review task
+  description: "Security review task N"
+  prompt: |
+    ...
+```
 
 ### Progress Tracking
 - Update `docs/team/PROGRESS.md` after each phase completes
@@ -573,15 +709,18 @@ See docs/team/BLOCKED.md for details and recommendations.
 
 ## Quick Reference
 
-| Phase | Agent/Skill | Input | Output |
-|-------|-------------|-------|--------|
-| 1. Discovery | Interactive + researcher | Idea | SPEC.md (draft) |
-| 2. Definition | product-owner | SPEC.md (draft) | SPEC.md (final) |
-| 3. Architecture | senior-engineer | SPEC.md (final) | ARCHITECTURE.md |
-| 4. Planning | writing-plans | ARCHITECTURE.md | TASKS.md |
-| 5a. Build | senior/frontend-engineer | TASKS.md | Code + commit |
-| 5b. Security Review | security-review (parallel) | git diff | SECURITY-REVIEW.md |
-| 5c. Code Review | code-reviewer (parallel) | git diff | CODE-REVIEW.md |
-| 5d. Fix | general-purpose | Review findings | Fixed code |
-| 6. Verification | qa | Code + SPEC.md | VERIFICATION.md |
-| 7. Ship Decision | product-owner | VERIFICATION.md | SHIP or GAPS.md |
+| Phase | Agent/Skill | Model | Input | Output |
+|-------|-------------|-------|-------|--------|
+| 1. Discovery | Interactive + researcher | — | Idea | SPEC.md (draft) |
+| 2. Definition | product-owner | haiku | SPEC.md (draft) | SPEC.md (final) |
+| 3. Architecture | senior-engineer | sonnet | SPEC.md (final) | ARCHITECTURE.md |
+| 4. Planning | writing-plans | haiku | ARCHITECTURE.md | TASKS.md |
+| 4.5 Worktree | Orchestrator (direct) | — | PROGRESS.md | Worktree + branch |
+| 5a. Build | senior/frontend-engineer | sonnet | TASKS.md | Code + commit |
+| 5b. Security Review | security-review (parallel) | haiku | git diff | SECURITY-REVIEW.md |
+| 5c. Code Review | code-reviewer (parallel) | haiku | git diff | CODE-REVIEW.md |
+| 5d. Fix | general-purpose | haiku | Review findings | Fixed code |
+| 6. Verification | qa | haiku | Code + SPEC.md | VERIFICATION.md |
+| 7. Ship Decision | product-owner | haiku | VERIFICATION.md | SHIP or GAPS.md |
+
+**Note:** Reviews (5b/5c) only run at designated checkpoints based on project size. See Review Strategy.

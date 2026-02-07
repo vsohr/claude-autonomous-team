@@ -228,28 +228,35 @@ Quick-start questions when investigating bugs:
 
 Code review is about knowledge sharing and catching issues early, not gatekeeping.
 
-### What to Look For
+### 10 Focus Areas
 
-| Priority | Focus Area |
-|----------|------------|
-| **High** | Logic errors, security issues, data integrity |
-| **Medium** | Performance concerns, error handling gaps |
-| **Low** | Style, naming, minor refactoring suggestions |
+1. Does implementation match the task/requirements exactly?
+2. Clean separation of concerns?
+3. Proper error handling (fail fast, clear messages)?
+4. Type safety (no `any`, proper generics)?
+5. DRY principle (no duplicated logic)?
+6. Edge cases handled?
+7. Tests actually test behavior (not just mocks)?
+8. No scope creep (only implements what's asked)?
+9. Naming conventions followed?
+10. No dead code or commented-out code?
 
-### Review Approach
+**Only flag issues you actually find.** Don't invent problems.
 
-1. **Understand the context** — Read the PR description, linked ticket
-2. **Run the code mentally** — Trace through the logic
-3. **Check boundaries** — Input validation, error cases, edge cases
-4. **Consider maintenance** — Will this be clear in 6 months?
-5. **Be specific** — "This could NPE if user is null" not "handle errors better"
+### Issue Severity
+
+| Severity | Examples |
+|----------|----------|
+| **Critical** | Bugs, data loss risks, security issues, broken functionality |
+| **Important** | Missing tests, poor patterns, error handling gaps |
+| **Minor** | Style, naming, optimization suggestions |
 
 ### Giving Feedback
 
-- **Distinguish blocking vs suggestions** — Use "Nit:" or "Optional:" prefixes
-- **Explain the why** — "This causes N+1 queries" not just "optimize this"
-- **Offer alternatives** — Don't just criticize, propose solutions
-- **Acknowledge good work** — Call out clever solutions, good test coverage
+- Be specific with file:line references
+- Explain **why** issues matter, not just what's wrong
+- Distinguish blocking vs suggestions (use "Nit:" or "Minor:" prefixes)
+- Acknowledge strengths — call out good solutions
 
 ---
 

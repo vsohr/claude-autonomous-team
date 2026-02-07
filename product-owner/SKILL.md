@@ -1,6 +1,6 @@
 ---
 name: product-owner
-description: Own the definition of "done" and maintain intent alignment throughout development. Use when enriching specs with acceptance criteria, resolving ambiguity during builds, making scope decisions, or as final verification gate before shipping. Provides the "why" behind features and defines quality bar.
+description: Own the definition of "done" and maintain intent alignment throughout development. Use when enriching specs with acceptance criteria, resolving ambiguity during builds, making scope decisions, or as final verification gate before shipping. Provides the "why" behind features and defines quality bar. Triggers on "is this done?", "acceptance criteria", "scope decision", "should we ship?", "define done", "what's in scope".
 ---
 
 # Product Owner

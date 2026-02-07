@@ -130,16 +130,57 @@ res.redirect(url.toString());
 
 ---
 
-## Secrets Scanning
+## Automated Security Scanning
 
-Before committing, check for leaked secrets:
+Run these tools as part of every security review:
 
+### Step 1: Dependency Vulnerabilities
 ```bash
-# Quick grep for common patterns
-grep -rE "(api[_-]?key|secret|password|token)\s*[:=]" --include="*.ts" --include="*.js" --include="*.py"
+# JavaScript/TypeScript - always run first
+npm audit --audit-level=moderate 2>/dev/null || true
+npx audit-ci --moderate 2>/dev/null || true
+
+# Python projects
+pip-audit 2>/dev/null || safety check 2>/dev/null || true
+```
+
+### Step 2: Secrets Detection
+```bash
+# Pattern-based secrets scan (fast, always available)
+grep -rE "(api[_-]?key|secret|password|token|private.?key)\s*[:=]\s*['\"][^'\"]{8,}" \
+  --include="*.ts" --include="*.js" --include="*.py" --include="*.json" \
+  --exclude-dir=node_modules --exclude-dir=.git || true
+
+# AWS key patterns
+grep -rE "AKIA[0-9A-Z]{16}" --include="*.ts" --include="*.js" --include="*.env*" || true
+
+# Private keys
+grep -rl "BEGIN.*PRIVATE KEY" --include="*.pem" --include="*.key" --include="*.ts" || true
 
 # Check .env files aren't staged
-git status | grep -E "\.env"
+git status | grep -E "\.env" || true
+
+# If available: deep secrets scan with trufflehog
+npx trufflehog filesystem . --no-update 2>/dev/null || true
+```
+
+### Step 3: Static Analysis (if available)
+```bash
+# Semgrep for security patterns (install: pip install semgrep)
+semgrep --config=auto --severity=ERROR . 2>/dev/null || true
+
+# ESLint security plugin (if configured)
+npx eslint --no-eslintrc --plugin security --rule 'security/detect-object-injection: warn' src/ 2>/dev/null || true
+```
+
+### Step 4: Financial/Crypto-Specific (when applicable)
+```bash
+# Check for race conditions in transaction code
+grep -rn "balance\|withdraw\|transfer\|deposit" --include="*.ts" | \
+  grep -v "test\|spec\|mock" || true
+
+# Check for missing atomic operations
+grep -rn "async.*balance\|await.*update.*amount" --include="*.ts" || true
 ```
 
 **Common secret patterns to avoid committing:**
