@@ -18,6 +18,207 @@ Think like an engineer who has seen systems succeed and fail at scale:
 
 ---
 
+## 10 Principles of Coding Excellence
+
+Use these as a checklist when writing, reviewing, or refactoring code. Every principle is actionable and measurable.
+
+### 1. Single Responsibility
+
+Every function, class, and module should have exactly one reason to change.
+
+- **Functions**: If description needs "and", split it. `process_order()` not `process_order_and_send_email()`
+- **Classes**: One domain concept per class. `OrderValidator` not `OrderManager` (which validates, saves, notifies)
+- **Files**: One cohesive concept per file. Route handlers separate from business logic separate from data access
+
+**Test**: Can you describe what it does in one sentence without "and" or "or"?
+
+### 2. Strict Typing
+
+No `any`, no `Any`, no implicit types. The type system is your first line of defense.
+
+```python
+# Bad
+def get_data(params: dict[str, Any]) -> Any: ...
+
+# Good
+def get_positions(account_id: str) -> list[Position]: ...
+```
+
+```typescript
+// Bad
+function processResult(data: any): any { ... }
+
+// Good
+function processResult(data: TradeResult): ExecutionSummary { ... }
+```
+
+- Use union types over `Any`: `str | int` not `Any`
+- Use `object` for truly unknown types (Python), `unknown` (TypeScript)
+- Generic types for containers: `list[Candle]` not `list`
+- Frozen dataclasses for immutable domain objects
+
+### 3. Fail Fast & Loud
+
+Errors should be impossible to ignore. Silent failures are the hardest bugs to find.
+
+```python
+# Bad — silent swallow
+try:
+    result = calculate_pnl(trade)
+except Exception:
+    logger.error("PnL calculation failed")
+    # continues with no result...
+
+# Good — fail fast with context
+try:
+    result = calculate_pnl(trade)
+except (ValueError, ArithmeticError) as e:
+    raise PnLCalculationError(
+        f"Failed to calculate PnL for trade {trade.id}: {e}"
+    ) from e
+```
+
+- Catch specific exceptions, never bare `except Exception: pass`
+- Validate at system boundaries (API inputs, config loading, external data)
+- Re-raise with context when catching for logging purposes
+- Let internal errors propagate — don't handle what you can't fix
+
+### 4. Small Units
+
+Small code is readable code. Enforce hard limits.
+
+| Unit | Limit | Action When Exceeded |
+|------|-------|---------------------|
+| Function | 50 lines | Extract sub-operations into named helpers |
+| File | 800 lines | Split by concern (see splitting patterns below) |
+| Parameters | 3 max | Use a config/options object |
+| Nesting depth | 3 levels | Use early returns, extract conditions |
+
+**File splitting patterns** (proven approaches):
+- Route handlers → group by API domain (accounts, trading, status)
+- Mixed concerns → separate parsing, execution, orchestration
+- State management → separate IO/persistence from logic
+- Large clients → separate API calls, response parsing, business logic
+
+**Always**: grep entire codebase for old import paths after splitting.
+
+### 5. DRY Without Over-Abstraction
+
+Eliminate duplication, but don't create abstractions for hypothetical reuse.
+
+```python
+# Bad — premature abstraction for 2 uses
+class GenericDataProcessor:
+    def process(self, data, transform_fn, validate_fn, output_fn): ...
+
+# Good — extract only when pattern is proven (3+ uses)
+def calculate_return_pct(pnl: Decimal, cost_basis: Decimal) -> Decimal:
+    """Used by analytics, dashboard, and reporting."""
+    return pnl / cost_basis if cost_basis else Decimal(0)
+```
+
+- **Rule of three**: Extract on the third duplication, not the second
+- Shared helpers in a `helpers.py` or `utils.ts` within the module, not globally
+- Three similar lines of code is better than one premature abstraction
+- DRY applies to logic, not to similar-looking code with different intent
+
+### 6. Intent-Revealing Names
+
+Code should read like well-written prose. If you need a comment to explain a name, the name is wrong.
+
+| Category | Convention | Examples |
+|----------|-----------|---------|
+| Functions | Verb-first, describes action | `fetch_candles`, `validate_order`, `calculate_pnl` |
+| Booleans | Reads as yes/no question | `is_valid`, `has_positions`, `should_retry` |
+| Classes | PascalCase noun, domain concept | `OrderExecutor`, `PositionTracker` |
+| Constants | UPPER_SNAKE, self-documenting | `MAX_RETRY_DURATION_SECONDS`, `DUST_THRESHOLD_USD` |
+| Private | Single underscore prefix | `_parse_response`, `_validate_config` |
+
+**Anti-patterns**: `data`, `info`, `result`, `tmp`, `val`, `process()`, `handle()`, `do_stuff()`
+
+### 7. Clean Interfaces
+
+Public APIs should be obvious to use correctly and hard to misuse.
+
+```python
+# Bad — 6 params, unclear which are required
+def place_order(symbol, side, qty, price, tif, effect, reduce, client_id): ...
+
+# Good — required params explicit, rest in typed config
+@dataclass(frozen=True)
+class OrderRequest:
+    symbol: str
+    side: Literal["BUY", "SELL"]
+    quantity: Decimal
+    time_in_force: str = "GTC"
+    side_effect_type: str | None = None
+
+def place_order(request: OrderRequest) -> OrderResult: ...
+```
+
+- Max 3 positional parameters; use objects/dataclasses for more
+- Required params first, optional params with defaults
+- Return types that force handling: `Result` over nulls, specific types over `Any`
+- Impossible states should be unrepresentable (use enums, unions, Literal types)
+
+### 8. Test Behavior, Not Implementation
+
+Tests should survive refactoring. If you change *how* something works but not *what* it does, tests should still pass.
+
+```python
+# Bad — tests implementation details
+def test_uses_fifo_internally():
+    engine._cost_basis_entries = [...]  # accessing private state
+    assert engine._calculate_fifo() == expected  # testing private method
+
+# Good — tests observable behavior
+def test_sell_returns_correct_pnl():
+    engine.record_buy(symbol="ETH", quantity=1, price=Decimal("2000"))
+    result = engine.record_sell(symbol="ETH", quantity=1, price=Decimal("2500"))
+    assert result.pnl == Decimal("500")
+```
+
+- Test public API, not private methods
+- Use Arrange-Act-Assert structure
+- Name tests as specifications: `test_close_position_calculates_fifo_pnl`
+- Mock at boundaries (external APIs, I/O), not internal collaborators
+
+### 9. No Dead Code
+
+Dead code is misleading code. If it's not used, delete it.
+
+- **No commented-out code** — that's what git history is for
+- **No unused imports** — linters catch these; fix them immediately
+- **No unused variables** — prefix with `_` only if required by framework/protocol
+- **No TODO without an issue** — `TODO(#123)` is acceptable; naked `TODO` is not
+- **No backwards-compatibility shims** — if the old code path is dead, remove it entirely
+- **No re-exports for removed code** — don't add `# removed` comments or alias stubs
+
+### 10. Separation of Concerns
+
+Each layer should be independently testable and replaceable.
+
+```
+┌─────────────┐
+│  API Routes  │  ← HTTP handling, request/response mapping
+├─────────────┤
+│  Services    │  ← Business logic, orchestration
+├─────────────┤
+│  Exchange    │  ← External API communication
+├─────────────┤
+│  Models      │  ← Dataclasses only, no behavior
+└─────────────┘
+```
+
+- **Routes** don't contain business logic — they call services
+- **Services** don't know about HTTP — they work with domain types
+- **Exchange clients** don't contain parsing logic — separate parsers
+- **Models** are pure data — no I/O, no side effects
+
+**Practical test**: Can you swap the exchange layer without touching service logic? Can you test services without a running server?
+
+---
+
 ## Architecture & Strategy
 
 ### Decision Framework
@@ -68,34 +269,7 @@ Complexity must justify itself with concrete requirements.
 
 ## Implementation Excellence
 
-### Code Quality Standards
-
-**Naming:**
-- Names reveal intent: `calculate_position_size` not `calc`
-- Booleans read as questions: `is_valid`, `has_permission`
-- Functions describe actions: `fetch_`, `validate_`, `transform_`
-
-**Functions:**
-- Do one thing well — if "and" in description, split it
-- Max 20-30 lines; extract helpers for longer logic
-- Pure functions where possible
-- Side effects isolated and explicit
-
-**Error Handling:**
-```python
-# Bad
-except Exception:
-    pass
-
-# Good
-except OrderValidationError as e:
-    logger.warning(f"Order {order_id} validation failed: {e.reason}")
-    return ValidationResult.failed(e.reason, recoverable=e.recoverable)
-```
-
-- Fail fast, fail loudly
-- Errors should be actionable
-- Handle at the right level
+> The 10 Principles above are the foundation. This section covers additional implementation guidance.
 
 ### API & Library Design
 
@@ -173,15 +347,18 @@ test.prop([fc.string()])('trim is idempotent', (s) => {
 
 ### Self-Review Checklist
 
-Before considering code complete:
+Before considering code complete, verify against the 10 Principles:
 
-- [ ] Public functions have docstrings
-- [ ] Error cases handled with informative messages
-- [ ] No hardcoded values — config externalized
-- [ ] Appropriate logging levels
-- [ ] Tests cover happy path, edge cases, errors
-- [ ] No commented-out code or TODOs without issues
-- [ ] Type hints on public interfaces
+- [ ] Single Responsibility — each function/class does one thing
+- [ ] Strict Typing — no `any`/`Any`, all interfaces typed
+- [ ] Fail Fast — specific exceptions caught, errors actionable
+- [ ] Small Units — functions <50 lines, files <800 lines
+- [ ] DRY — no duplicated logic, no premature abstractions
+- [ ] Intent-Revealing Names — code reads without comments
+- [ ] Clean Interfaces — max 3 params, obvious defaults
+- [ ] Tests cover behavior — happy path, edge cases, errors
+- [ ] No Dead Code — no commented-out code, no unused imports
+- [ ] Separation of Concerns — layers independently testable
 
 ---
 
@@ -228,18 +405,18 @@ Quick-start questions when investigating bugs:
 
 Code review is about knowledge sharing and catching issues early, not gatekeeping.
 
-### 10 Focus Areas
+### Review Against the 10 Principles
 
-1. Does implementation match the task/requirements exactly?
-2. Clean separation of concerns?
-3. Proper error handling (fail fast, clear messages)?
-4. Type safety (no `any`, proper generics)?
-5. DRY principle (no duplicated logic)?
-6. Edge cases handled?
-7. Tests actually test behavior (not just mocks)?
-8. No scope creep (only implements what's asked)?
-9. Naming conventions followed?
-10. No dead code or commented-out code?
+1. **Single Responsibility** — Does each function/class do one thing?
+2. **Strict Typing** — No `any`/`Any`, all interfaces typed?
+3. **Fail Fast & Loud** — Specific exceptions, actionable errors?
+4. **Small Units** — Functions <50 lines, files <800 lines?
+5. **DRY** — No duplicated logic, no premature abstractions?
+6. **Intent-Revealing Names** — Code reads without comments?
+7. **Clean Interfaces** — Max 3 params, obvious defaults?
+8. **Test Behavior** — Tests survive refactoring, cover edge cases?
+9. **No Dead Code** — No commented-out code, unused imports?
+10. **Separation of Concerns** — Layers independently testable?
 
 **Only flag issues you actually find.** Don't invent problems.
 

@@ -1,124 +1,35 @@
 ---
 name: autonomous-team
-description: Autonomous software engineering team that converts a rough idea into a fully working, verified application. Use when you have a project idea and want it built end-to-end with minimal intervention. Coordinates discovery, definition, architecture, planning, build, and verification phases using persistent agent teammates with shared task tracking.
+description: Autonomous software engineering team that converts a rough idea into a fully working, verified application. Use when you have a project idea and want it built end-to-end with minimal intervention. Coordinates discovery, definition, architecture, planning, build, and verification phases using Task subagents with file-based handoffs.
 ---
 
 # Autonomous Team
 
-Convert an idea into a working, verified application through coordinated phases using Claude Code agent teams.
+Convert an idea into a working, verified application through coordinated phases using Task subagents.
 
-**Announce at start:** "I'm using the autonomous-team skill to build this project with an agent team."
+**Announce at start:** "I'm using the autonomous-team skill to build this project with subagents."
 
 ## Core Principles
 
 1. **Documents are contracts** — Each phase produces an artifact the next phase consumes
-2. **Persistent teammates do the work** — Team lead coordinates, teammates execute and retain context
+2. **Subagents do the work** — Team lead coordinates, subagents execute and return results
 3. **Artifacts live on disk** — All handoffs via files in `docs/team/`
-4. **Shared task list** — Use TaskCreate/TaskUpdate for progress tracking alongside `docs/team/PROGRESS.md`
+4. **TodoWrite for tracking** — Use TodoWrite to track phase/milestone progress
 5. **Max 5 iterations** — If verification fails 5 times, produce BLOCKED.md and stop
 6. **Scope is locked** — Once spec is approved, new ideas go to `docs/team/FUTURE.md`
 7. **Worktree isolation** — Build work happens in a git worktree on a feature branch, merged to main only on success
 
 ---
 
-## Team Structure
+## Architecture: Subagents Instead of Teams
 
-Create a team with **4 persistent teammates**, each retaining context across their tasks:
+This skill uses **Task subagents** (not Claude agent teams). Each subagent:
+- Is spawned via the `Task` tool with `subagent_type: "general-purpose"`
+- Runs independently, completes its work, and returns a result
+- Does NOT persist between phases — context is passed via files in `docs/team/`
+- Can be run in parallel when phases are independent
 
-| Teammate | Role | Phases | Why Persistent? |
-|----------|------|--------|-----------------|
-| **architect** | Definition, architecture, planning | 2, 3, 4 | Retains spec context through design → planning pipeline |
-| **builder** | Implementation | 5 | Retains codebase understanding across milestones |
-| **reviewer** | Security + code review | 5b/5c | Retains review context, knows prior findings |
-| **qa** | Verification + ship decision | 6, 7 | Retains verification context for ship decision |
-
-**Team lead (you)** handles: Phase 1 (Discovery), Phase 4.5 (Worktree), coordination, trivial fixes, iteration routing, merge & cleanup.
-
----
-
-## Phase 0: Team Setup
-
-**Goal:** Create the agent team and shared task list.
-
-### Process:
-
-1. **Create the team:**
-   ```
-   TeamCreate:
-     team_name: "<project-slug>"
-     description: "Building <project name>"
-   ```
-
-2. **Spawn all 4 teammates** (in a single message for parallel startup):
-   ```
-   Task (general-purpose):
-     team_name: "<project-slug>"
-     name: "architect"
-     description: "Architect teammate"
-     prompt: |
-       You are the architect for this project. You handle definition, architecture, and planning.
-       Read the following skills for reference:
-       - C:\Users\User\.claude\skills\product-owner\SKILL.md (for definition work)
-       - C:\Users\User\.claude\skills\senior-engineer\SKILL.md (for architecture)
-       - C:\Users\User\.claude\skills\writing-plans\SKILL.md (for planning)
-
-       Wait for task assignments from the team lead.
-       Write all artifacts to docs/team/ in the project root.
-       When you complete a task, mark it completed with TaskUpdate and message the team lead.
-
-   Task (general-purpose):
-     team_name: "<project-slug>"
-     name: "builder"
-     description: "Builder teammate"
-     prompt: |
-       You are the senior engineer builder for this project. You implement milestones.
-       Read the senior-engineer skill at C:\Users\User\.claude\skills\senior-engineer\SKILL.md
-       Also read the frontend-engineer skill at C:\Users\User\.claude\skills\frontend-engineer\SKILL.md for UI work.
-
-       Wait for task assignments from the team lead.
-       You will work in a git worktree (path provided per task).
-       When you complete a milestone, mark the task completed with TaskUpdate and message the team lead.
-
-   Task (general-purpose):
-     team_name: "<project-slug>"
-     name: "reviewer"
-     description: "Reviewer teammate"
-     model: haiku
-     prompt: |
-       You are the security and code reviewer for this project.
-       Read the security-review skill at C:\Users\User\.claude\skills\security-review\SKILL.md
-
-       Wait for task assignments from the team lead.
-       You review git diffs at milestone checkpoints.
-       Write findings to docs/team/SECURITY-REVIEW.md and docs/team/CODE-REVIEW.md.
-       When done, mark the task completed with TaskUpdate and message the team lead.
-
-   Task (general-purpose):
-     team_name: "<project-slug>"
-     name: "qa"
-     description: "QA teammate"
-     prompt: |
-       You are the QA engineer and Product Owner for this project.
-       Read the following skills:
-       - C:\Users\User\.claude\skills\qa\SKILL.md (for verification)
-       - C:\Users\User\.claude\skills\product-owner\SKILL.md (for ship decisions)
-
-       Wait for task assignments from the team lead.
-       When you complete a task, mark it completed with TaskUpdate and message the team lead.
-   ```
-
-3. **Create initial tasks** in the shared task list:
-   ```
-   TaskCreate: "Phase 1: Discovery" (assigned to team-lead)
-   TaskCreate: "Phase 2: Definition" (pending, blocked by Phase 1)
-   TaskCreate: "Phase 3: Architecture" (pending, blocked by Phase 2)
-   TaskCreate: "Phase 4: Planning" (pending, blocked by Phase 3)
-   TaskCreate: "Phase 5: Build" (pending, blocked by Phase 4)
-   TaskCreate: "Phase 6: Verification" (pending, blocked by Phase 5)
-   TaskCreate: "Phase 7: Ship Decision" (pending, blocked by Phase 6)
-   ```
-
-**Exit:** Team is running, tasks are created. Proceed to Phase 1.
+**Trade-off:** Subagents don't retain context across phases (unlike persistent teammates). This is compensated by thorough artifact files that carry all context forward.
 
 ---
 
@@ -132,8 +43,8 @@ docs/team/
 ├── ARCHITECTURE.md   # Technical design
 ├── TASKS.md          # Implementation plan
 ├── PROGRESS.md       # Current state and decisions
-├── SECURITY-REVIEW.md # Security findings per task (appended)
-├── CODE-REVIEW.md    # Code review findings per task (appended)
+├── SECURITY-REVIEW.md # Security findings (appended per milestone)
+├── CODE-REVIEW.md    # Code review findings (appended per milestone)
 ├── VERIFICATION.md   # QA results
 ├── GAPS.md           # Issues found (if any)
 ├── FUTURE.md         # Out-of-scope ideas
@@ -157,34 +68,30 @@ docs/team/
    - What are the must-have features vs nice-to-haves?
    - Any technical constraints (stack, hosting, integrations)?
    - What does "done" look like? (Reference product if helpful)
-3. If technical feasibility is unclear, message the **architect** to research:
+3. If technical feasibility is unclear, spawn a quick research subagent:
    ```
-   SendMessage:
-     type: "message"
-     recipient: "architect"
-     content: "Research feasibility of [specific technical question]. Write findings to docs/team/research-notes.md"
-     summary: "Research feasibility question"
+   Task (general-purpose):
+     description: "Research feasibility"
+     prompt: "Research feasibility of [specific question]. Return findings."
    ```
 4. Write `docs/team/SPEC.md` (draft) with features described
 5. Show the user a summary and ask: **"Does this direction look right?"**
 
-**Exit:** User approves direction. Mark Phase 1 task complete. Proceed to Phase 2.
+**Exit:** User approves direction. Proceed to Phase 2.
 
 ---
 
-## Phase 2: Definition (Architect Teammate)
+## Phase 2: Definition (Subagent)
 
 **Goal:** Enrich the draft spec with testable acceptance criteria.
 
-**Assign to architect:**
-
 ```
-SendMessage:
-  type: "message"
-  recipient: "architect"
-  content: |
-    Phase 2: Definition.
-    Follow the product-owner skill "Mode 1: Definition" exactly.
+Task (general-purpose):
+  description: "Define spec with acceptance criteria"
+  prompt: |
+    You are a Product Owner defining acceptance criteria.
+    Read the product-owner skill at C:\Users\User\.claude\skills\product-owner\SKILL.md
+    Follow "Mode 1: Definition" exactly.
 
     Input: Read docs/team/SPEC.md
 
@@ -198,31 +105,26 @@ SendMessage:
 
     Write the enriched spec back to docs/team/SPEC.md
     Every feature must have testable acceptance criteria when you're done.
-    Mark the Phase 2 task as completed when finished.
-  summary: "Definition: enrich spec with acceptance criteria"
 ```
 
 **Exit:** SPEC.md has acceptance criteria for every feature.
 
 ---
 
-## Phase 3: Architecture (Architect Teammate)
+## Phase 3: Architecture (Subagent)
 
 **Goal:** Design the technical implementation.
 
-**Advantage:** The architect retains full context from Phase 2 — no need to re-read or re-explain the spec.
-
-**Assign to architect:**
-
 ```
-SendMessage:
-  type: "message"
-  recipient: "architect"
-  content: |
-    Phase 3: Architecture.
-    Follow the senior-engineer skill Architecture & Strategy section.
+Task (general-purpose):
+  description: "Design architecture"
+  prompt: |
+    You are a senior architect designing the technical implementation.
+    Read the senior-engineer skill at C:\Users\User\.claude\skills\senior-engineer\SKILL.md
 
-    You already know the spec from Phase 2. Now design the implementation:
+    Input: Read docs/team/SPEC.md for the full specification with acceptance criteria.
+
+    Your job:
     1. Choose tech stack with rationale (prefer boring technology)
     2. Design project/folder structure
     3. Define data models and schemas
@@ -231,7 +133,7 @@ SendMessage:
     6. Define error handling strategy
     7. Plan for testability
 
-    Use WebSearch and Context7 MCP tools if you need to research libraries or APIs.
+    Use WebSearch if you need to research libraries or APIs.
 
     Write output to docs/team/ARCHITECTURE.md with this structure:
     - Tech Stack table (Layer | Choice | Rationale)
@@ -241,32 +143,29 @@ SendMessage:
     - API Design (if applicable)
     - Error Handling Strategy
     - Testing Strategy
-
-    Mark the Phase 3 task as completed when finished.
-  summary: "Architecture: design technical implementation"
 ```
 
 **Exit:** ARCHITECTURE.md is complete and implementable.
 
 ---
 
-## Phase 4: Planning (Architect Teammate)
+## Phase 4: Planning (Subagent)
 
 **Goal:** Break architecture into atomic, ordered tasks.
 
-**Advantage:** The architect retains full context from Phases 2 AND 3 — understands both the spec and the architecture deeply.
-
-**Assign to architect:**
-
 ```
-SendMessage:
-  type: "message"
-  recipient: "architect"
-  content: |
-    Phase 4: Planning.
-    Follow the writing-plans skill format exactly.
+Task (general-purpose):
+  description: "Create implementation plan"
+  prompt: |
+    You are a senior engineer creating an implementation plan.
+    Read the writing-plans skill at C:\Users\User\.claude\skills\writing-plans\SKILL.md
+    Follow the format exactly.
 
-    You already know the spec and architecture. Now break it into tasks:
+    Input:
+    - Read docs/team/SPEC.md for requirements and acceptance criteria
+    - Read docs/team/ARCHITECTURE.md for design decisions
+
+    Your job:
     1. Decompose into bite-sized tasks (each S or M sized)
     2. Sequence respecting dependencies
     3. Each task has acceptance criteria and exact file paths
@@ -277,19 +176,11 @@ SendMessage:
 
     Write output to docs/team/TASKS.md
 
-    Also create initial docs/team/PROGRESS.md with:
+    Also create docs/team/PROGRESS.md with:
     - Phase: Planning complete
     - Iteration: 1 of 5
-    - All tasks listed as pending
+    - All milestones listed as pending
     - Total milestones: [count]
-
-    Create TaskCreate entries in the shared task list for each milestone:
-    - "Milestone 1: [name]" (blocked by Phase 4)
-    - "Milestone 2: [name]" (blocked by Milestone 1)
-    - etc.
-
-    Mark the Phase 4 task as completed when finished.
-  summary: "Planning: create implementation task breakdown"
 ```
 
 **Exit:** TASKS.md has actionable tasks. First task is immediately implementable.
@@ -326,8 +217,6 @@ SendMessage:
    Branch: feature/<slug>
    ```
 
-5. **Notify the builder** of the worktree path for all subsequent work.
-
 **Exit:** Worktree exists, branch created, docs copied. Ready for Phase 5.
 
 ---
@@ -335,8 +224,6 @@ SendMessage:
 ## Phase 5: Build Loop
 
 **Goal:** Implement all tasks from the plan efficiently, with reviews at strategic checkpoints.
-
-**Key advantage over subagents:** The builder retains context across milestones — no re-reading SPEC.md, ARCHITECTURE.md, or understanding previous code each time.
 
 ### Review Strategy (Based on Project Size)
 
@@ -354,20 +241,19 @@ Before starting the build loop, count total milestones and apply:
 For each milestone in `docs/team/TASKS.md`:
 
 ```
-Step 1: Builder implements all tasks in milestone
-Step 2: Reviewer does Security + Code Review — IF review checkpoint
-Step 3: Fix Critical issues (team lead for trivial, builder for complex)
+Step 1: Subagent implements all tasks in milestone
+Step 2: Subagent does Security + Code Review — IF review checkpoint
+Step 3: Fix Critical issues (team lead for trivial, subagent for complex)
 Step 4: Update PROGRESS.md, proceed to next milestone
 ```
 
-### Step 1: Assign Milestone to Builder
+### Step 1: Build Milestone (Subagent)
 
 ```
-SendMessage:
-  type: "message"
-  recipient: "builder"
-  content: |
-    Implement Milestone N: [milestone name]
+Task (general-purpose):
+  description: "Build Milestone N"
+  prompt: |
+    You are a senior engineer implementing Milestone N: [milestone name].
 
     IMPORTANT: You are working in a git worktree at [worktree-path].
     All file operations, git commits, and test runs must happen in that directory.
@@ -375,44 +261,35 @@ SendMessage:
     Context (read these in the worktree):
     - docs/team/SPEC.md for requirements
     - docs/team/ARCHITECTURE.md for design decisions
-    - docs/team/TASKS.md for Milestone N tasks
-    - docs/team/PROGRESS.md for completed work
+    - docs/team/TASKS.md for Milestone N tasks specifically
+    - docs/team/PROGRESS.md for completed work so far
 
-    For each task:
-    1. Create the files as specified
+    Read the senior-engineer skill at C:\Users\User\.claude\skills\senior-engineer\SKILL.md
+    For frontend/UI work, also read C:\Users\User\.claude\skills\frontend-engineer\SKILL.md
+
+    For each task in Milestone N:
+    1. Create the files as specified in TASKS.md
     2. Run tests to verify
     3. Commit with message referencing the task number
 
-    Update PROGRESS.md after completing the milestone.
-    Mark the Milestone N task as completed when finished.
+    Update docs/team/PROGRESS.md after completing the milestone.
 
     Do NOT implement tasks from other milestones.
-  summary: "Build Milestone N: [name]"
+    Return a summary of what was built and any issues encountered.
 ```
 
-**For subsequent milestones:** The builder already knows the codebase — just send the milestone number. No need to re-explain the context.
-
-```
-SendMessage:
-  type: "message"
-  recipient: "builder"
-  content: "Implement Milestone N+1: [name]. Same worktree. Mark task completed when done."
-  summary: "Build Milestone N+1"
-```
-
-**Builder skill selection:**
-- Backend/logic tasks → `senior-engineer` skill only
-- Frontend/UI tasks → `senior-engineer` + `frontend-engineer` skills (both)
-
-### Step 2: Assign Review to Reviewer (at checkpoints only)
+### Step 2: Review Milestone (Subagent — at checkpoints only)
 
 **Only at designated review checkpoints** (see Review Strategy above).
 
 ```
-SendMessage:
-  type: "message"
-  recipient: "reviewer"
-  content: |
+Task (general-purpose):
+  description: "Review Milestone N"
+  model: haiku
+  prompt: |
+    You are a security and code reviewer.
+    Read the security-review skill at C:\Users\User\.claude\skills\security-review\SKILL.md
+
     Review Milestone N at [worktree-path].
 
     Do BOTH security review and code review:
@@ -434,8 +311,7 @@ SendMessage:
     - docs/team/CODE-REVIEW.md (append section for Milestone N)
 
     Each with: Verdict: PASS | FAIL/NEEDS FIXES
-    Mark the review task as completed when finished.
-  summary: "Review Milestone N"
+    Return a summary of findings.
 ```
 
 ### Step 3: Fix Critical Issues (Conditional)
@@ -451,62 +327,45 @@ If ALL critical issues are:
 
 Then the team lead applies fixes directly.
 
-**Complex fix path (message builder):**
+**Complex fix path (subagent):**
 
 ```
-SendMessage:
-  type: "message"
-  recipient: "builder"
-  content: |
-    Fix critical issues found in Milestone N review.
+Task (general-purpose):
+  description: "Fix review issues"
+  prompt: |
+    You are a senior engineer fixing critical issues found in Milestone N review.
+    Working in worktree at [worktree-path].
+
     Read the latest sections of:
     - docs/team/SECURITY-REVIEW.md
     - docs/team/CODE-REVIEW.md
 
     Fix ONLY Critical issues. Commit with: "fix(milestone-N): [description]"
     Do NOT fix non-critical issues. Do NOT refactor.
-  summary: "Fix critical review issues"
+    Return a summary of what was fixed.
 ```
 
 ### Step 4: Update Progress
 
 After milestone complete:
 1. Update `docs/team/PROGRESS.md` — mark milestone complete
-2. Mark milestone task as completed via TaskUpdate
+2. Update TodoWrite — mark milestone task as completed
 3. Proceed to next milestone
-
-### Ambiguity Resolution
-
-If the builder encounters ambiguity, they can message the architect directly:
-
-```
-# Builder → Architect (direct communication)
-SendMessage:
-  type: "message"
-  recipient: "architect"
-  content: "Question about [specific behavior]. What's the intended approach?"
-  summary: "Clarifying implementation question"
-```
-
-The architect retains full spec/architecture context and can respond immediately.
 
 **Exit:** All milestones complete with passing reviews. App runs.
 
 ---
 
-## Phase 6: Verification (QA Teammate)
+## Phase 6: Verification (Subagent)
 
 **Goal:** Verify the app meets its specification.
 
-**Assign to QA:**
-
 ```
-SendMessage:
-  type: "message"
-  recipient: "qa"
-  content: |
-    Phase 6: Verification.
-    Follow the qa skill process exactly.
+Task (general-purpose):
+  description: "QA verification"
+  prompt: |
+    You are a QA engineer verifying the application.
+    Read the qa skill at C:\Users\User\.claude\skills\qa\SKILL.md
 
     Working in worktree at [worktree-path].
 
@@ -531,8 +390,7 @@ SendMessage:
     - Critical issues: [count]
     - Warnings: [count]
 
-    Mark the Phase 6 task as completed when finished.
-  summary: "QA verification"
+    Return the PASS/FAIL verdict and summary.
 ```
 
 **Exit:** VERIFICATION.md produced with clear PASS/FAIL status.
@@ -554,20 +412,21 @@ If VERIFICATION.md shows ALL:
 
 Then team lead writes "APPROVED" at the top of docs/team/VERIFICATION.md directly, then proceeds to **Merge & Cleanup**.
 
-**Standard path (QA teammate decides):**
-
-**Advantage:** QA retains full verification context from Phase 6 — knows exactly what passed/failed.
+**Standard path (subagent decides):**
 
 ```
-SendMessage:
-  type: "message"
-  recipient: "qa"
-  content: |
-    Phase 7: Ship Decision.
-    Follow the product-owner skill Mode 3.
+Task (general-purpose):
+  description: "Ship decision"
+  prompt: |
+    You are a Product Owner making a ship/no-ship decision.
+    Read the product-owner skill at C:\Users\User\.claude\skills\product-owner\SKILL.md
+    Follow Mode 3 (Ship Gate).
 
-    You already know the verification results from Phase 6.
-    Read docs/team/SPEC.md to compare against what was promised.
+    Working in worktree at [worktree-path].
+
+    Input:
+    - Read docs/team/SPEC.md for what was promised
+    - Read docs/team/VERIFICATION.md for test results
 
     Your job:
     1. Check every acceptance criterion has a passing test
@@ -577,8 +436,7 @@ SendMessage:
     If SHIP: Write "APPROVED" at the top of docs/team/VERIFICATION.md
     If NO-SHIP: Write docs/team/GAPS.md with specific, actionable gaps
 
-    Mark the Phase 7 task as completed when finished.
-  summary: "Ship decision"
+    Return your decision and reasoning.
 ```
 
 ### Merge & Cleanup (on APPROVED)
@@ -601,38 +459,6 @@ git worktree remove ../<project-name>-<slug>
 git branch -d feature/<slug>
 ```
 
-### Team Shutdown
-
-After merge (or on block), gracefully shut down all teammates:
-
-```
-SendMessage:
-  type: "shutdown_request"
-  recipient: "architect"
-  content: "Project complete, shutting down team"
-
-SendMessage:
-  type: "shutdown_request"
-  recipient: "builder"
-  content: "Project complete, shutting down team"
-
-SendMessage:
-  type: "shutdown_request"
-  recipient: "reviewer"
-  content: "Project complete, shutting down team"
-
-SendMessage:
-  type: "shutdown_request"
-  recipient: "qa"
-  content: "Project complete, shutting down team"
-```
-
-After all teammates have shut down:
-
-```
-TeamDelete
-```
-
 ### If VERIFICATION.md shows FAIL:
 
 1. Read VERIFICATION.md to understand failures
@@ -647,7 +473,6 @@ TeamDelete
 Read docs/team/PROGRESS.md for current iteration count.
 
 IF PASS and PO approves:
-    → Shutdown team
     → Announce completion to user
     → Show summary of what was built
     → DONE
@@ -656,14 +481,14 @@ ELSE IF iteration < 5:
     → Increment iteration in PROGRESS.md
     → Analyze GAPS.md to determine routing:
 
-    Route each gap to the appropriate teammate:
-      - "Missing feature" → builder (Phase 5)
-      - "Bug in implementation" → builder (Phase 5)
-      - "Architecture issue" → architect (Phase 3)
-      - "Spec unclear" → architect (Phase 2)
-      - "Task breakdown wrong" → architect (Phase 4)
+    Route each gap to the appropriate subagent:
+      - "Missing feature" → builder subagent (Phase 5)
+      - "Bug in implementation" → builder subagent (Phase 5)
+      - "Architecture issue" → architect subagent (Phase 3)
+      - "Spec unclear" → definition subagent (Phase 2)
+      - "Task breakdown wrong" → planning subagent (Phase 4)
 
-    → After fixes, route back to qa (Phase 6)
+    → After fixes, route back to QA subagent (Phase 6)
 
 ELSE (iteration = 5):
     → Write docs/team/BLOCKED.md:
@@ -674,10 +499,24 @@ ELSE (iteration = 5):
       - Branch: feature/<slug>
       - Recommendation for human intervention
     → Leave worktree intact for user inspection
-    → Shutdown team
     → Report to user
     → STOP
 ```
+
+---
+
+## Parallel Opportunities
+
+Unlike persistent teammates, subagents can be spawned in parallel when phases are independent. Look for these opportunities:
+
+| Opportunity | When |
+|-------------|------|
+| **Phases 2+3 cannot be parallelized** | Phase 3 depends on Phase 2 output |
+| **Build + Review cannot overlap** | Review needs completed milestone |
+| **Multiple small milestones** | If milestones have no file overlap, build in parallel |
+| **Research tasks during Phase 1** | Feasibility checks while writing spec |
+
+When parallelizing milestones, ensure they don't edit the same files. If in doubt, run sequentially.
 
 ---
 
@@ -694,7 +533,6 @@ Files: [count of files created/modified]
 Tests: [X passing]
 Iterations: [N of 5 used]
 Merged feature/<slug> to main. Worktree cleaned up.
-Team shut down.
 
 Artifacts in docs/team/ for reference.
 ```
@@ -709,7 +547,6 @@ What works: [summary]
 What's stuck: [summary]
 Worktree preserved at [worktree-path] for inspection.
 See docs/team/BLOCKED.md for details and recommendations.
-Team shut down.
 ```
 
 ---
@@ -719,7 +556,7 @@ Team shut down.
 ### Scope Management
 - Once SPEC.md is approved (end of Phase 1), scope is locked
 - New ideas discovered during build go to `docs/team/FUTURE.md`
-- Only the QA/PO teammate can make scope decisions
+- Only the PO subagent (Phase 7) can make scope decisions
 
 ### Quality Gates
 - Reviews run at strategic checkpoints (not every milestone) — see Review Strategy
@@ -728,38 +565,33 @@ Team shut down.
 - Trivial fixes (<5 lines, single file) can be applied by team lead directly
 - Max 2 fix attempts per issue before logging and moving on
 - QA must run actual tests (not just read code)
-- QA/PO has final say on ship/no-ship (or team lead for 100% clean PASS)
+- PO subagent has final say on ship/no-ship (or team lead for 100% clean PASS)
 
-### Teammate Discipline
-- Each teammate has a clear role — don't send builder work to reviewer
-- Teammates write output to files in `docs/team/` (not just messages)
+### Subagent Discipline
+- Each subagent gets a clear, focused task — don't overload prompts
+- Subagents write output to files in `docs/team/` (not just return messages)
 - Team lead reads files to decide next steps
-- Never assign two teammates to edit the same files concurrently (file conflicts)
-- Teammates can message each other directly for clarification (builder → architect)
-- Mark tasks completed via TaskUpdate after each phase/milestone
-
-### Context Advantages (vs Subagents)
-- **Architect** retains spec → architecture → planning context (Phases 2-4)
-- **Builder** retains codebase understanding across milestones (no re-reading)
-- **Reviewer** remembers prior review findings (can catch recurring patterns)
-- **QA** retains verification context for ship decision (Phases 6-7)
-- Subsequent messages to teammates can be brief — they already have context
+- Never run two subagents that edit the same files concurrently
+- Pass all necessary context via the prompt (subagents don't share memory)
 
 ### Model Selection
 
-| Teammate | Recommended Model | Rationale |
-|----------|-------------------|-----------|
-| **architect** | sonnet (default) | Complex design work, needs strong reasoning |
-| **builder** | sonnet (default) | Standard implementation, code generation |
-| **reviewer** | haiku | Checklist-based reviews, scanning diffs |
-| **qa** | sonnet (default) | Needs to run tests and make judgment calls |
+| Subagent Role | Recommended Model | Rationale |
+|---------------|-------------------|-----------|
+| **Definition** | sonnet (default) | Needs strong reasoning for acceptance criteria |
+| **Architecture** | sonnet (default) | Complex design work |
+| **Planning** | sonnet (default) | Task decomposition needs precision |
+| **Builder** | sonnet (default) | Standard implementation, code generation |
+| **Reviewer** | haiku | Checklist-based reviews, scanning diffs |
+| **QA** | sonnet (default) | Needs to run tests and make judgment calls |
+| **Ship Decision** | sonnet (default) | Judgment call on quality |
 
 Override with `model` parameter when spawning if needed:
-- Use `opus` for architect on novel/complex projects
+- Use `opus` for architecture on novel/complex projects
 - Use `haiku` for builder on simple S-sized milestones
 
 ### Progress Tracking
-- Use TaskCreate/TaskUpdate for shared task list (teammates can see progress)
+- Use TodoWrite for phase/milestone progress (visible to user)
 - Update `docs/team/PROGRESS.md` after each phase completes (persists across sessions)
 - Record decisions made and their rationale
 
@@ -767,18 +599,17 @@ Override with `model` parameter when spawning if needed:
 
 ## Quick Reference
 
-| Phase | Teammate | Input | Output |
+| Phase | Executor | Input | Output |
 |-------|----------|-------|--------|
-| 0. Setup | Team lead | Idea | Team + task list |
 | 1. Discovery | Team lead (interactive) | Idea | SPEC.md (draft) |
-| 2. Definition | architect | SPEC.md (draft) | SPEC.md (final) |
-| 3. Architecture | architect (has Phase 2 context) | SPEC.md (final) | ARCHITECTURE.md |
-| 4. Planning | architect (has Phase 2+3 context) | ARCHITECTURE.md | TASKS.md |
+| 2. Definition | Subagent | SPEC.md (draft) | SPEC.md (final) |
+| 3. Architecture | Subagent | SPEC.md (final) | ARCHITECTURE.md |
+| 4. Planning | Subagent | ARCHITECTURE.md | TASKS.md |
 | 4.5 Worktree | Team lead | PROGRESS.md | Worktree + branch |
-| 5a. Build | builder (retains context per milestone) | TASKS.md | Code + commits |
-| 5b/c. Review | reviewer | git diff | SECURITY-REVIEW.md + CODE-REVIEW.md |
-| 5d. Fix | builder or team lead | Review findings | Fixed code |
-| 6. Verification | qa | Code + SPEC.md | VERIFICATION.md |
-| 7. Ship Decision | qa (has Phase 6 context) | VERIFICATION.md | SHIP or GAPS.md |
+| 5a. Build | Subagent (per milestone) | TASKS.md | Code + commits |
+| 5b/c. Review | Subagent (at checkpoints) | git diff | SECURITY-REVIEW.md + CODE-REVIEW.md |
+| 5d. Fix | Subagent or team lead | Review findings | Fixed code |
+| 6. Verification | Subagent | Code + SPEC.md | VERIFICATION.md |
+| 7. Ship Decision | Subagent or team lead | VERIFICATION.md | SHIP or GAPS.md |
 
 **Note:** Reviews (5b/5c) only run at designated checkpoints based on project size. See Review Strategy.
